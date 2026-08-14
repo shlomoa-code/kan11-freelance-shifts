@@ -239,14 +239,29 @@ async function loadShifts() {
   currentShifts = data || [];
 }
 
+function monthHasEnded(year, month) {
+  // מותר להגיש רק החל מהיום הראשון של החודש שאחרי החודש המדווח
+  const now = new Date();
+  const firstOfNextMonth = new Date(year, month, 1); // month כאן כבר 1-based, אז month=הבא ב-Date (0-based)
+  return now >= firstOfNextMonth;
+}
+
 function renderReportScreen() {
   const isOpen = currentReport.status === 'open';
+  const canSubmit = monthHasEnded(currentReport.year, currentReport.month);
   document.getElementById('report-title').textContent = `${MONTH_NAMES[currentReport.month-1]} ${currentReport.year}`;
   document.getElementById('report-count').textContent = `${currentShifts.length} משמרות`;
   document.getElementById('report-badge').innerHTML = `<span class="badge ${STATUS_BADGE[currentReport.status]}">${STATUS_LABELS[currentReport.status]}</span>`;
 
   document.getElementById('add-shift-btn').classList.toggle('hidden', !isOpen);
-  document.getElementById('submit-report-btn').classList.toggle('hidden', !isOpen || currentShifts.length === 0);
+  const submitBtn = document.getElementById('submit-report-btn');
+  submitBtn.classList.toggle('hidden', !isOpen || currentShifts.length === 0);
+  if (isOpen && currentShifts.length > 0) {
+    submitBtn.disabled = !canSubmit;
+    submitBtn.style.opacity = canSubmit ? '1' : '0.5';
+    submitBtn.style.cursor = canSubmit ? 'pointer' : 'not-allowed';
+    submitBtn.textContent = canSubmit ? '🔒 נעל ושלח דוח' : `🔒 ניתן להגיש רק החל מ-1/${(currentReport.month % 12) + 1}/${currentReport.month === 12 ? currentReport.year + 1 : currentReport.year}`;
+  }
 
   const list = document.getElementById('shifts-list');
   document.getElementById('no-shifts').classList.toggle('hidden', currentShifts.length > 0);
@@ -404,6 +419,10 @@ async function deleteShift(id) {
 }
 
 function confirmSubmit() {
+  if (!monthHasEnded(currentReport.year, currentReport.month)) {
+    showToast('ניתן להגיש דוח רק לאחר שהחודש הסתיים', true);
+    return;
+  }
   document.getElementById('confirm-title').textContent = 'הגשת דוח חודשי';
   document.getElementById('confirm-sub').textContent = 'האם אתה בטוח שברצונך לנעול את החודש ולהגיש את הדוח?';
   document.getElementById('confirm-yes-btn').onclick = submitReport;
