@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ניהול משמרות פרילנסרים - כאן 11</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#e11d2e">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<style>
+  :root{
+    --red:#e11d2e; --red-dark:#b5121f; --bg:#f7f7f8; --card:#ffffff;
+    --text:#1a1a1a; --muted:#6b7280; --green:#16a34a; --border:#e5e7eb;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;}
+  .topbar{background:linear-gradient(135deg,var(--red),var(--red-dark));height:8px;}
+  .container{max-width:640px;margin:0 auto;padding:24px 20px 80px;}
+  .header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+  .logo{width:56px;height:56px;border-radius:16px;display:block;margin:0 auto 12px;object-fit:cover;}
+  h1{font-size:22px;text-align:center;margin:0 0 4px;}
+  .subtitle{text-align:center;color:var(--muted);font-size:14px;margin-bottom:24px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  label{display:block;font-size:13px;font-weight:600;margin:12px 0 6px;}
+  input,select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px;background:#fff;}
+  input:focus,select:focus{outline:2px solid var(--red);border-color:var(--red);}
+  .btn{display:block;width:100%;padding:13px;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;text-align:center;}
+  .btn-primary{background:var(--red);color:#fff;}
+  .btn-primary:hover{background:var(--red-dark);}
+  .btn-outline{background:#fff;border:1px solid var(--border);color:var(--text);}
+  .btn-sm{padding:8px 14px;font-size:13px;width:auto;display:inline-block;}
+  .btn-danger{background:#fff;color:var(--red);border:1px solid var(--red);}
+  .link{color:var(--red);cursor:pointer;text-decoration:underline;font-size:14px;}
+  .row{display:flex;gap:10px;}
+  .row > *{flex:1;}
+  .hidden{display:none !important;}
+  .top-user{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:2px solid var(--red);margin-bottom:24px;}
+  .top-user .name{font-weight:700;}
+  .top-user .role{color:var(--muted);font-size:13px;}
+  .exit-link{color:var(--muted);cursor:pointer;font-size:14px;}
+  .empty-box{background:#fff;border:1px solid var(--border);border-radius:12px;padding:24px;text-align:center;color:var(--muted);font-size:14px;}
+  .section-title{font-weight:700;margin:20px 0 10px;display:flex;justify-content:space-between;}
+  .report-item, .shift-item{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;}
+  .shift-item{cursor:default;}
+  .shift-amount{color:var(--red);font-weight:700;font-size:16px;}
+  .shift-meta{color:var(--muted);font-size:12.5px;margin-top:4px;}
+  .shift-actions{display:flex;gap:10px;align-items:center;}
+  .icon-btn{background:none;border:none;cursor:pointer;font-size:16px;}
+  .summary-box{border:2px solid var(--red);border-radius:14px;padding:18px;margin:20px 0;}
+  .summary-title{font-weight:700;margin-bottom:12px;}
+  .summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .summary-cell{background:#f5f5f5;border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;font-size:14px;}
+  .summary-cell.total{background:#fde8ea;color:var(--red-dark);font-weight:700;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+  .modal{background:#fff;border-radius:16px;padding:24px;max-width:420px;width:100%;max-height:90vh;overflow-y:auto;}
+  .modal h3{margin:0 0 4px;}
+  .modal .sub{color:var(--muted);font-size:13px;margin-bottom:16px;}
+  .time-row{display:flex;gap:6px;align-items:center;}
+  .checkbox-row{display:flex;align-items:center;gap:8px;margin:14px 0;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;}
+  .badge-open{background:#fef3c7;color:#92400e;}
+  .badge-submitted{background:#dbeafe;color:#1e40af;}
+  .badge-approved{background:#dcfce7;color:#166534;}
+  .badge-rejected{background:#fee2e2;color:#991b1b;}
+  .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#dcfce7;color:#166534;padding:14px 24px;border-radius:12px;font-weight:600;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.15);}
+  .toast.error{background:#fee2e2;color:#991b1b;}
+  .back-link{cursor:pointer;color:var(--muted);font-size:14px;margin-bottom:14px;display:inline-block;}
+  .admin-tabs{display:flex;gap:8px;margin-bottom:20px;}
+  .admin-tab{flex:1;padding:10px;text-align:center;border-radius:10px;background:#fff;border:1px solid var(--border);cursor:pointer;font-size:13px;font-weight:600;}
+  .admin-tab.active{background:var(--red);color:#fff;border-color:var(--red);}
+  .rate-field{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);}
+  .rate-field label{margin:0;font-weight:500;font-size:13px;}
+  .rate-field input{width:100px;text-align:center;}
+</style>
+</head>
+<body>
+<div class="topbar"></div>
+<div class="container" id="app">
+
+  <!-- ===== מסך התחברות/הרשמה ===== -->
+  <div id="screen-auth">
+    <img src="assets/logo-512.png" alt="כאן 11" class="logo">
+    <h1>ניהול משמרות פרילנסרים</h1>
+    <div class="subtitle">כאן 11 - חדשות</div>
+
+    <div id="login-box" class="card">
+      <div style="font-weight:700;font-size:17px;">התחברות</div>
+      <div style="color:var(--muted);font-size:13px;">הזן את פרטי החשבון שלך</div>
+      <label>אימייל</label>
+      <input type="email" id="login-email" placeholder="you@example.com">
+      <label>סיסמה</label>
+      <input type="password" id="login-password">
+      <button class="btn btn-primary" style="margin-top:18px;" onclick="doLogin()">התחבר</button>
+      <div style="text-align:center;margin-top:14px;">
+        <span class="link" onclick="showRegister()">אין לך חשבון? הירשם</span>
+      </div>
+    </div>
+
+    <div id="register-box" class="card hidden">
+      <div style="font-weight:700;font-size:17px;">יצירת חשבון</div>
+      <div style="color:var(--muted);font-size:13px;">מלא את הפרטים כדי להתחיל</div>
+      <label>שם מלא *</label>
+      <input type="text" id="reg-name" placeholder="השם שיופיע בקובץ הדוח">
+      <label>אימייל</label>
+      <input type="email" id="reg-email">
+      <label>סיסמה</label>
+      <input type="password" id="reg-password">
+      <label>תפקיד</label>
+      <select id="reg-role">
+        <option value="">בחר תפקיד</option>
+        <option value="photographer">צלם</option>
+        <option value="recorder">מקליט</option>
+      </select>
+      <button class="btn btn-primary" style="margin-top:18px;" onclick="doRegister()">צור חשבון</button>
+      <div style="text-align:center;margin-top:14px;">
+        <span class="link" onclick="showLogin()">יש לך כבר חשבון? התחבר</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== דשבורד עובד ===== -->
+  <div id="screen-dashboard" class="hidden">
+    <div class="top-user">
+      <span class="exit-link" onclick="logout()">יציאה ⏏</span>
+      <div style="text-align:left;">
+        <div class="name" id="db-name"></div>
+        <div class="role" id="db-role"></div>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="openNewReportModal()">+ פתח דוח חודשי חדש</button>
+
+    <div class="section-title">דוחות פתוחים</div>
+    <div id="open-reports"></div>
+
+    <div class="section-title">היסטוריית הגשות</div>
+    <div id="history-reports"></div>
+  </div>
+
+  <!-- ===== מסך דוח בודד ===== -->
+  <div id="screen-report" class="hidden">
+    <span class="back-link" onclick="goDashboard()">→ חזרה לדשבורד</span>
+    <div class="top-user">
+      <div id="report-badge"></div>
+      <div style="text-align:left;">
+        <div class="name" id="report-title"></div>
+        <div class="role" id="report-count"></div>
+      </div>
+    </div>
+    <button class="btn btn-primary" id="add-shift-btn" onclick="openShiftModal()">+ הוסף משמרת</button>
+    <div id="shifts-list" style="margin-top:16px;"></div>
+    <div class="empty-box hidden" id="no-shifts">עדיין לא הוזנו משמרות לחודש זה</div>
+
+    <div class="summary-box">
+      <div class="summary-title">סיכום חודשי</div>
+      <div class="summary-grid">
+        <div class="summary-cell"><span id="sum-hours">0</span><span>סה"כ שעות</span></div>
+        <div class="summary-cell"><span id="sum-count">0</span><span>סה"כ משמרות</span></div>
+        <div class="summary-cell total"><span id="sum-vat">0 ₪</span><span>כולל מע"מ</span></div>
+        <div class="summary-cell"><span id="sum-before">0 ₪</span><span>לפני מע"מ</span></div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="submit-report-btn" onclick="confirmSubmit()">🔒 נעל ושלח דוח</button>
+    <div id="report-status-box"></div>
+    <div style="text-align:center;margin-top:20px;">
+      <span class="link" style="color:var(--muted);" onclick="confirmDeleteReport()">מחק חודש</span>
+    </div>
+  </div>
+
+  <!-- ===== מסך ניהול (מנהל) ===== -->
+  <div id="screen-admin" class="hidden">
+    <div class="top-user">
+      <span class="exit-link" onclick="logout()">יציאה ⏏</span>
+      <div style="text-align:left;">
+        <div class="name">מסך ניהול</div>
+        <div class="role">שלמה - מנהל</div>
+      </div>
+    </div>
+    <div class="admin-tabs">
+      <div class="admin-tab active" id="tab-pending" onclick="switchAdminTab('pending')">ממתינים לאישור</div>
+      <div class="admin-tab" id="tab-all" onclick="switchAdminTab('all')">כל הדוחות</div>
+      <div class="admin-tab" id="tab-rates" onclick="switchAdminTab('rates')">תעריפים</div>
+    </div>
+    <div id="admin-pending"></div>
+    <div id="admin-all" class="hidden"></div>
+    <div id="admin-rates" class="hidden"></div>
+  </div>
+
+</div>
+
+<!-- ===== מודל: פתיחת דוח חדש ===== -->
+<div class="modal-overlay hidden" id="modal-newreport">
+  <div class="modal">
+    <h3>פתיחת דוח חודשי חדש</h3>
+    <div class="sub">בחר חודש ושנה לדוח החדש</div>
+    <label>חודש</label>
+    <select id="new-report-month"></select>
+    <label>שנה</label>
+    <select id="new-report-year"></select>
+    <div class="row" style="margin-top:18px;">
+      <button class="btn btn-primary" onclick="createReport()">צור דוח</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-newreport')">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== מודל: משמרת חדשה/עריכה ===== -->
+<div class="modal-overlay hidden" id="modal-shift">
+  <div class="modal">
+    <h3 id="shift-modal-title">משמרת חדשה</h3>
+    <div class="sub" id="shift-modal-sub"></div>
+    <input type="hidden" id="shift-id">
+    <label>יום בחודש</label>
+    <select id="shift-day"></select>
+    <label>מיקום / פרטי משמרת</label>
+    <input type="text" id="shift-location" placeholder="ניוז, מגזין, פירוט...">
+    <div class="row">
+      <div>
+        <label>שעת התחלה</label>
+        <div class="time-row">
+          <select id="shift-start-h"></select>
+          <span>:</span>
+          <select id="shift-start-m"></select>
+        </div>
+      </div>
+      <div>
+        <label>שעת סיום</label>
+        <div class="time-row">
+          <select id="shift-end-h"></select>
+          <span>:</span>
+          <select id="shift-end-m"></select>
+        </div>
+      </div>
+    </div>
+    <div id="km-field">
+      <label>סה"כ קילומטר</label>
+      <input type="number" id="shift-km" value="0" min="0">
+    </div>
+    <div id="camera-field" class="checkbox-row">
+      <input type="checkbox" id="shift-camera">
+      <label style="margin:0;">הוספת מצלמה שנייה (+300 ₪)</label>
+    </div>
+    <div id="wireless-field" class="hidden">
+      <label>אלחוטי נוסף (מעבר ל-2 הבסיסיים)</label>
+      <select id="shift-wireless">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+      </select>
+    </div>
+    <label>סוג יום</label>
+    <select id="shift-daytype">
+      <option value="regular">יום רגיל</option>
+      <option value="chag_eve">ערב חג</option>
+      <option value="chag">חג</option>
+      <option value="election">יום בחירות</option>
+    </select>
+    <label>עונה (לצורך חלון כניסת/יציאת שבת)</label>
+    <select id="shift-season">
+      <option value="summer">שעון קיץ</option>
+      <option value="winter">שעון חורף</option>
+    </select>
+    <div id="shift-preview" style="margin-top:14px;font-weight:700;color:var(--red);"></div>
+    <div class="row" style="margin-top:18px;">
+      <button class="btn btn-primary" onclick="saveShift()">שמור</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-shift')">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== מודל אישור פעולה ===== -->
+<div class="modal-overlay hidden" id="modal-confirm">
+  <div class="modal">
+    <h3 id="confirm-title"></h3>
+    <div class="sub" id="confirm-sub"></div>
+    <div class="row" style="margin-top:18px;">
+      <button class="btn btn-primary" id="confirm-yes-btn">אישור</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-confirm')">ביטול</button>
+    </div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
