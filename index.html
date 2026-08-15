@@ -19,6 +19,8 @@
   *{box-sizing:border-box;}
   body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;}
   .topbar{background:linear-gradient(135deg,var(--red),var(--red-dark));height:8px;}
+  .app-logo-bar{display:flex;justify-content:center;padding:14px 0 4px;}
+  .mini-logo{width:40px;height:40px;border-radius:10px;object-fit:cover;}
   .container{max-width:640px;margin:0 auto;padding:24px 20px 80px;}
   .header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
   .logo{width:56px;height:56px;border-radius:16px;display:block;margin:0 auto 12px;object-fit:cover;}
@@ -79,6 +81,7 @@
 </head>
 <body>
 <div class="topbar"></div>
+<div class="app-logo-bar hidden" id="mini-logo-bar"><img src="logo-512.png" alt="כאן 11" class="mini-logo"></div>
 <div class="container" id="app">
 
   <!-- ===== מסך התחברות/הרשמה ===== -->

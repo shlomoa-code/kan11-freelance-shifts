@@ -107,6 +107,7 @@ function showScreen(id) {
   ['screen-auth','screen-dashboard','screen-report','screen-admin'].forEach(s => {
     document.getElementById(s).classList.toggle('hidden', s !== id);
   });
+  document.getElementById('mini-logo-bar').classList.toggle('hidden', id === 'screen-auth');
 }
 
 function showToast(msg, isError) {
@@ -399,8 +400,13 @@ async function saveShift() {
   }
   if (error) { showToast('שגיאה בשמירה: ' + error.message, true); return; }
   closeModal('modal-shift');
-  await loadShifts();
-  renderReportScreen();
+  if (adminEditMode) {
+    showToast('המשמרת עודכנה ✓');
+    await refreshAfterAdminEdit(adminEditReportId);
+  } else {
+    await loadShifts();
+    renderReportScreen();
+  }
 }
 
 async function deleteShift(id) {
@@ -511,9 +517,11 @@ function renderAdminReportList(reports, containerId, showActions) {
     const total = (r.shifts || []).reduce((s,x) => s + Number(x.amount_before_vat || 0), 0);
     const vat = total * (rateSettings.vat_percent/100);
     return `<div class="card">
-      <div style="display:flex;justify-content:space-between;cursor:pointer;" onclick="toggleAdminDetails('${r.id}')">
-        <div>
-          <strong>${r.profiles.full_name}</strong> <span class="badge" style="background:#eee;color:#555;">${ROLE_LABELS[r.profiles.role]}</span><br>
+      <div style="display:flex;justify-content:space-between;">
+        <div style="cursor:pointer;" onclick="toggleAdminDetails('${r.id}')">
+          <strong>${r.profiles.full_name}</strong>
+          <button class="icon-btn" style="font-size:13px;" onclick="event.stopPropagation();promptEditFreelancerName('${r.worker_id}','${r.profiles.full_name.replace(/'/g, "\\'")}')" title="ערוך שם">✏️</button>
+          <span class="badge" style="background:#eee;color:#555;">${ROLE_LABELS[r.profiles.role]}</span><br>
           <span style="color:var(--muted);font-size:13px;">${MONTH_NAMES[r.month-1]} ${r.year} · ${r.shifts.length} משמרות · <span class="link">פירוט חישוב ▾</span></span>
         </div>
         <div style="text-align:left;">
@@ -530,6 +538,16 @@ function renderAdminReportList(reports, containerId, showActions) {
   }).join('');
   window._adminReportsCache = window._adminReportsCache || {};
   reports.forEach(r => window._adminReportsCache[r.id] = r);
+}
+
+async function promptEditFreelancerName(workerId, currentName) {
+  const newName = prompt('שם מלא מתוקן (יש להקפיד על התאמה מדויקת לסידור העבודה):', currentName);
+  if (newName === null || !newName.trim() || newName.trim() === currentName) return;
+  const { error } = await sb.from('fl_profiles').update({ full_name: newName.trim() }).eq('id', workerId);
+  if (error) { showToast('שגיאה בעדכון השם: ' + error.message, true); return; }
+  showToast('השם עודכן ✓');
+  const activeTab = document.getElementById('tab-pending').classList.contains('active') ? 'pending' : 'all';
+  activeTab === 'pending' ? loadAdminPending() : loadAdminAll();
 }
 
 function toggleAdminDetails(reportId) {
@@ -570,7 +588,13 @@ function renderShiftBreakdown(report, s) {
     </tr>`;
   }).join('');
   return `<div style="background:#fafafa;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;font-size:13px;">
-    <div style="font-weight:700;margin-bottom:6px;">${dowLabel ? dowLabel + ' – ' : ''}${dateStr} · ${s.start_time}-${s.end_time} · ${dayTypeLabel(s.day_type)}${s.location ? ' · ' + s.location : ''}</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+      <div style="font-weight:700;">${dowLabel ? dowLabel + ' – ' : ''}${dateStr} · ${s.start_time}-${s.end_time} · ${dayTypeLabel(s.day_type)}${s.location ? ' · ' + s.location : ''}</div>
+      <div style="display:flex;gap:8px;flex-shrink:0;">
+        <button class="icon-btn" onclick="adminEditShift('${report.id}','${s.id}')" title="ערוך משמרת">✏️</button>
+        <button class="icon-btn" onclick="adminDeleteShift('${report.id}','${s.id}')" title="מחק משמרת">🗑️</button>
+      </div>
+    </div>
     <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
       <thead><tr style="color:var(--muted);text-align:right;"><th>שעה</th><th>אחוז</th><th>סכום</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -583,6 +607,49 @@ function renderShiftBreakdown(report, s) {
     </div>
     <div id="roster-check-${s.id}" style="margin-top:6px;font-size:12.5px;color:var(--muted);">🔄 בודק התאמה לסידור עבודה...</div>
   </div>`;
+}
+
+// ---- עריכה/מחיקה של משמרת על ידי המנהל (עובד גם על דוחות שכבר הוגשו/אושרו) ----
+let adminEditMode = false;
+let adminEditReportId = null;
+let managerOwnProfile = null;
+
+function adminEditShift(reportId, shiftId) {
+  const report = window._adminReportsCache[reportId];
+  if (!report) return;
+  managerOwnProfile = managerOwnProfile || currentProfile;
+  currentReport = report;
+  currentProfile = { ...currentProfile, role: report.profiles.role };
+  adminEditMode = true;
+  adminEditReportId = reportId;
+  currentShifts = report.shifts;
+  openShiftModal(shiftId);
+}
+
+async function adminDeleteShift(reportId, shiftId) {
+  if (!confirm('למחוק את המשמרת הזו לצמיתות?')) return;
+  const { error } = await sb.from('fl_shifts').delete().eq('id', shiftId);
+  if (error) { showToast('שגיאה במחיקה: ' + error.message, true); return; }
+  showToast('המשמרת נמחקה ✓');
+  await refreshAfterAdminEdit(reportId);
+}
+
+async function refreshAfterAdminEdit(reportId) {
+  if (managerOwnProfile) { currentProfile = managerOwnProfile; }
+  adminEditMode = false;
+  adminEditReportId = null;
+  const { data: shifts } = await sb.from('fl_shifts').select('*').eq('report_id', reportId).order('day_of_month');
+  const report = window._adminReportsCache[reportId];
+  if (report) report.shifts = shifts || [];
+  const box = document.getElementById('admin-details-' + reportId);
+  if (box) {
+    box.dataset.loaded = '';
+    box.classList.remove('hidden');
+    toggleAdminDetails(reportId); // יסגור כי כרגע פתוח
+    toggleAdminDetails(reportId); // ויפתח מחדש עם הנתונים המעודכנים
+  }
+  const activeTab = document.getElementById('tab-pending').classList.contains('active') ? 'pending' : 'all';
+  activeTab === 'pending' ? loadAdminPending() : loadAdminAll();
 }
 
 async function approveReport(id) {
