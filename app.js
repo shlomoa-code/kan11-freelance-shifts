@@ -6,7 +6,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_pUoh7aPHbENXIoSP1uLnsQ_dVXizlCz';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-const ROLE_LABELS = { photographer: 'צלם', recorder: 'מקליט', manager: 'מנהל' };
+const ROLE_LABELS = { photographer: 'צלם', recorder: 'מקליט', manager: 'מנהל', accountant: 'הנהלת חשבונות' };
 const STATUS_LABELS = { open: 'פתוח', submitted: 'ממתין לאישור', approved: 'מאושר', rejected: 'נדחה' };
 const STATUS_BADGE = { open: 'badge-open', submitted: 'badge-submitted', approved: 'badge-approved', rejected: 'badge-rejected' };
 
@@ -89,6 +89,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+let isFullManager = false; // true רק עבור role==='manager' (הבדל בין מנהל מלא להנה"ח - צפייה בלבד)
+
 async function loadProfileAndRoute() {
   const { data, error } = await sb.from('fl_profiles').select('*').eq('id', currentUser.id).single();
   if (error || !data) { showToast('שגיאה בטעינת פרופיל', true); return; }
@@ -97,8 +99,14 @@ async function loadProfileAndRoute() {
   const { data: rates } = await sb.from('fl_rate_settings').select('*').eq('id', 1).single();
   rateSettings = rates;
 
-  if (currentProfile.role === 'manager') {
+  if (currentProfile.role === 'manager' || currentProfile.role === 'accountant') {
+    isFullManager = currentProfile.role === 'manager';
     showScreen('screen-admin');
+    document.getElementById('admin-role-label').textContent = isFullManager ? 'מנהל' : 'הנהלת חשבונות (צפייה בלבד)';
+    ['tab-rates','tab-backup'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.toggle('hidden', !isFullManager);
+    });
     loadAdminPending();
   } else {
     showScreen('screen-dashboard');
@@ -597,7 +605,7 @@ function renderAdminReportList(reports, containerId, showActions) {
       <div style="display:flex;justify-content:space-between;">
         <div style="cursor:pointer;" onclick="toggleAdminDetails('${r.id}')">
           <strong>${r.profiles.full_name}</strong>
-          <button class="icon-btn" style="font-size:13px;" onclick="event.stopPropagation();promptEditFreelancerName('${r.worker_id}','${r.profiles.full_name.replace(/'/g, "\\'")}')" title="ערוך שם">✏️</button>
+          ${isFullManager ? `<button class="icon-btn" style="font-size:13px;" onclick="event.stopPropagation();promptEditFreelancerName('${r.worker_id}','${r.profiles.full_name.replace(/'/g, "\\'")}')" title="ערוך שם">✏️</button>` : ''}
           <span class="badge" style="background:#eee;color:#555;">${ROLE_LABELS[r.profiles.role]}</span><br>
           <span style="color:var(--muted);font-size:13px;">${MONTH_NAMES[r.month-1]} ${r.year} · ${r.shifts.length} משמרות · <span class="link">פירוט חישוב ▾</span></span>
         </div>
@@ -607,7 +615,10 @@ function renderAdminReportList(reports, containerId, showActions) {
         </div>
       </div>
       <div id="admin-details-${r.id}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;"></div>
-      ${showActions ? `<div class="row" style="margin-top:14px;">
+      <div class="row" style="margin-top:10px;">
+        <button class="btn btn-sm btn-outline" style="flex:1;" onclick="printReport('${r.id}')">🖨️ הדפס דוח לחתימה</button>
+      </div>
+      ${showActions && isFullManager ? `<div class="row" style="margin-top:10px;">
         <button class="btn btn-sm btn-primary" style="flex:1;" onclick="approveReport('${r.id}')">✓ אישור</button>
         <button class="btn btn-sm btn-danger" style="flex:1;" onclick="rejectReportPrompt('${r.id}')">↩ בקשת תיקון</button>
       </div>` : ''}
@@ -615,6 +626,71 @@ function renderAdminReportList(reports, containerId, showActions) {
   }).join('');
   window._adminReportsCache = window._adminReportsCache || {};
   reports.forEach(r => window._adminReportsCache[r.id] = r);
+}
+
+async function printReport(reportId) {
+  const report = window._adminReportsCache[reportId];
+  if (!report) return;
+  const shifts = (report.shifts || []).slice().sort((a,b)=>a.day_of_month-b.day_of_month);
+  let totalHours = 0, totalBefore = 0;
+  const rows = shifts.map(s => {
+    const r = calcShift({
+      role: report.profiles.role, year: report.year, month: report.month, dayOfMonth: s.day_of_month,
+      dayType: s.day_type, startTime: s.start_time, endTime: s.end_time, km: s.km, extraEquipment: s.extra_equipment
+    }, rateSettings);
+    totalHours += r.totalHours; totalBefore += r.beforeVat;
+    return `<tr>
+      <td>${s.day_of_month}/${report.month}/${report.year}</td>
+      <td>${s.start_time}-${s.end_time}</td>
+      <td>${r.totalHours}</td>
+      <td>${dayTypeLabel(s.day_type)}</td>
+      <td>${s.location || ''}</td>
+      <td>${s.km || 0}</td>
+      <td>₪${r.beforeVat.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+    </tr>`;
+  }).join('');
+  const vat = totalBefore * (rateSettings.vat_percent / 100);
+  const html = `<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="UTF-8">
+    <title>דוח שעות - ${report.profiles.full_name} - ${MONTH_NAMES[report.month-1]} ${report.year}</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:30px;color:#1a1a1a;}
+      h1{font-size:20px;margin-bottom:4px;}
+      .sub{color:#555;margin-bottom:20px;}
+      table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px;}
+      th,td{border:1px solid #ccc;padding:6px 8px;text-align:right;}
+      th{background:#f2f2f2;}
+      .totals{margin-top:20px;font-size:14px;}
+      .totals div{margin-bottom:4px;}
+      .grand{font-size:17px;font-weight:bold;color:#b5121f;margin-top:8px;}
+      .sign{margin-top:60px;display:flex;justify-content:space-between;}
+      .sign div{width:45%;border-top:1px solid #333;padding-top:6px;text-align:center;font-size:13px;}
+      @media print { .no-print{display:none;} }
+    </style></head><body>
+    <h1>דוח שעות חודשי - כאן 11 חדשות</h1>
+    <div class="sub">
+      <div><strong>שם:</strong> ${report.profiles.full_name} (${ROLE_LABELS[report.profiles.role]})</div>
+      <div><strong>חודש:</strong> ${MONTH_NAMES[report.month-1]} ${report.year}</div>
+      <div><strong>סטטוס:</strong> ${STATUS_LABELS[report.status]}</div>
+    </div>
+    <table>
+      <thead><tr><th>תאריך</th><th>שעות</th><th>סה"כ שעות</th><th>סוג יום</th><th>מיקום</th><th>ק"מ</th><th>סכום</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="totals">
+      <div>סה"כ משמרות: ${shifts.length}</div>
+      <div>סה"כ שעות: ${totalHours.toFixed(1)}</div>
+      <div>סה"כ לפני מע"מ: ₪${totalBefore.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+      <div class="grand">סה"כ כולל מע"מ: ₪${(totalBefore+vat).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+    </div>
+    <div class="sign">
+      <div>חתימת הפרילנס</div>
+      <div>חתימת מנהל מאשר</div>
+    </div>
+    <script>window.onload = () => window.print();<\/script>
+  </body></html>`;
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
 }
 
 async function promptEditFreelancerName(workerId, currentName) {
@@ -672,8 +748,8 @@ function renderShiftBreakdown(report, s) {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
       <div style="font-weight:700;">${dowLabel ? dowLabel + ' – ' : ''}${dateStr} · ${s.start_time}-${s.end_time} · ${dayTypeLabel(s.day_type)}${s.location ? ' · ' + s.location : ''}</div>
       <div style="display:flex;gap:8px;flex-shrink:0;">
-        <button class="icon-btn" onclick="adminEditShift('${report.id}','${s.id}')" title="ערוך משמרת">✏️</button>
-        <button class="icon-btn" onclick="adminDeleteShift('${report.id}','${s.id}')" title="מחק משמרת">🗑️</button>
+        ${isFullManager ? `<button class="icon-btn" onclick="adminEditShift('${report.id}','${s.id}')" title="ערוך משמרת">✏️</button>
+        <button class="icon-btn" onclick="adminDeleteShift('${report.id}','${s.id}')" title="מחק משמרת">🗑️</button>` : ''}
       </div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
