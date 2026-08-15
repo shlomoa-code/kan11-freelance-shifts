@@ -393,13 +393,17 @@ async function saveShift() {
     dayType: payload.day_type, startTime: start, endTime: end, km: payload.km, extraEquipment: extra }, rateSettings);
   payload.amount_before_vat = r.beforeVat;
 
-  let error;
+  let error, resultData;
   if (editingShiftId) {
-    ({ error } = await sb.from('fl_shifts').update(payload).eq('id', editingShiftId));
+    ({ data: resultData, error } = await sb.from('fl_shifts').update(payload).eq('id', editingShiftId).select());
   } else {
-    ({ error } = await sb.from('fl_shifts').insert(payload));
+    ({ data: resultData, error } = await sb.from('fl_shifts').insert(payload).select());
   }
   if (error) { showToast('שגיאה בשמירה: ' + error.message, true); return; }
+  if (!resultData || resultData.length === 0) {
+    showToast('השמירה נחסמה (חסרה הרשאה)' + (adminEditMode ? ' - יש להריץ את add_manager_edit_permissions.sql ב-Supabase' : ''), true);
+    return;
+  }
   closeModal('modal-shift');
   if (adminEditMode) {
     showToast('המשמרת עודכנה ✓');
@@ -611,8 +615,12 @@ function renderAdminReportList(reports, containerId, showActions) {
 async function promptEditFreelancerName(workerId, currentName) {
   const newName = prompt('שם מלא מתוקן (יש להקפיד על התאמה מדויקת לסידור העבודה):', currentName);
   if (newName === null || !newName.trim() || newName.trim() === currentName) return;
-  const { error } = await sb.from('fl_profiles').update({ full_name: newName.trim() }).eq('id', workerId);
+  const { data, error } = await sb.from('fl_profiles').update({ full_name: newName.trim() }).eq('id', workerId).select();
   if (error) { showToast('שגיאה בעדכון השם: ' + error.message, true); return; }
+  if (!data || data.length === 0) {
+    showToast('העדכון נחסם (חסרה הרשאה) - יש להריץ את add_manager_edit_permissions.sql ב-Supabase', true);
+    return;
+  }
   showToast('השם עודכן ✓');
   const activeTab = document.getElementById('tab-pending').classList.contains('active') ? 'pending' : 'all';
   activeTab === 'pending' ? loadAdminPending() : loadAdminAll();
