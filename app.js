@@ -174,6 +174,7 @@ async function loadDashboard() {
   const { data: reports } = await sb.from('fl_reports')
     .select('*, shifts:fl_shifts(count)')
     .eq('worker_id', currentUser.id)
+    .eq('is_deleted', false)
     .order('year', { ascending: false }).order('month', { ascending: false });
 
   const open = (reports || []).filter(r => r.status === 'open');
@@ -236,7 +237,7 @@ async function openReport(reportId) {
 function goDashboard() { currentReport = null; showScreen('screen-dashboard'); loadDashboard(); }
 
 async function loadShifts() {
-  const { data } = await sb.from('fl_shifts').select('*').eq('report_id', currentReport.id).order('day_of_month');
+  const { data } = await sb.from('fl_shifts').select('*').eq('report_id', currentReport.id).eq('is_deleted', false).order('day_of_month');
   currentShifts = data || [];
 }
 
@@ -410,7 +411,7 @@ async function saveShift() {
 }
 
 async function deleteShift(id) {
-  const { error } = await sb.from('fl_shifts').delete().eq('id', id);
+  const { error } = await sb.from('fl_shifts').update({ is_deleted: true }).eq('id', id);
   if (error) { showToast('שגיאה במחיקה', true); return; }
   await loadShifts();
   renderReportScreen();
@@ -478,7 +479,7 @@ function confirmDeleteReport() {
 
 async function deleteReport() {
   closeModal('modal-confirm');
-  const { error } = await sb.from('fl_reports').delete().eq('id', currentReport.id);
+  const { error } = await sb.from('fl_reports').update({ is_deleted: true }).eq('id', currentReport.id);
   if (error) { showToast('שגיאה במחיקה', true); return; }
   goDashboard();
 }
@@ -487,27 +488,94 @@ async function deleteReport() {
 // מסך ניהול (מנהל)
 // ============================================================
 function switchAdminTab(tab) {
-  ['pending','all','rates'].forEach(t => {
+  ['pending','all','rates','backup'].forEach(t => {
     document.getElementById('tab-'+t).classList.toggle('active', t === tab);
     document.getElementById('admin-'+t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'pending') loadAdminPending();
   if (tab === 'all') loadAdminAll();
   if (tab === 'rates') loadAdminRates();
+  if (tab === 'backup') loadAdminBackup();
+}
+
+// ============================================================
+// גיבוי ושחזור
+// ============================================================
+async function loadAdminBackup() {
+  const box = document.getElementById('admin-backup');
+  const { data: last } = await sb.from('fl_backups').select('created_at').order('created_at', { ascending: false }).limit(1).single();
+  box.innerHTML = `<div class="card">
+    <p style="color:var(--muted);font-size:14px;">
+      הגיבוי שומר עותק מלא של כל הפרופילים, הדוחות, המשמרות וההגדרות - הן לקובץ שיורד למחשב שלך, והן לשרת (כדי שאפשר יהיה לשחזר ישירות מכאן במידת הצורך).
+      <br><br>שום נתון שנשלח על ידי פרילנס לא נמחק לעולם, גם לא בלחיצה על "מחק" - הוא רק מוסתר, ותמיד אפשר לשחזר.
+    </p>
+    <p style="font-size:13px;"><strong>גיבוי אחרון בשרת:</strong> ${last ? new Date(last.created_at).toLocaleString('he-IL') : 'אין עדיין גיבוי'}</p>
+    <button class="btn btn-primary" onclick="createBackup()">📦 צור גיבוי עכשיו</button>
+    <button class="btn btn-outline" style="margin-top:10px;" onclick="restoreLastBackup()">♻️ שחזר מהגיבוי האחרון</button>
+  </div>`;
+}
+
+async function createBackup() {
+  showToast('יוצר גיבוי...');
+  const [profiles, reports, shifts, rates] = await Promise.all([
+    sb.from('fl_profiles').select('*'),
+    sb.from('fl_reports').select('*'),
+    sb.from('fl_shifts').select('*'),
+    sb.from('fl_rate_settings').select('*'),
+  ]);
+  const backupData = {
+    created_at: new Date().toISOString(),
+    profiles: profiles.data || [],
+    reports: reports.data || [],
+    shifts: shifts.data || [],
+    rate_settings: rates.data || [],
+  };
+  const { error } = await sb.from('fl_backups').insert({ created_by: currentUser.id, data: backupData });
+  if (error) { showToast('שגיאה בשמירת הגיבוי בשרת: ' + error.message, true); }
+
+  const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `kan11-freelance-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('הגיבוי נוצר ונשמר ✓');
+  loadAdminBackup();
+}
+
+async function restoreLastBackup() {
+  if (!confirm('לשחזר את כל הנתונים מהגיבוי האחרון? פעולה זו תחזיר כל רשומה שנמחקה/שונתה בטעות, ולא תמחק נתונים קיימים אחרים.')) return;
+  const { data: last, error } = await sb.from('fl_backups').select('*').order('created_at', { ascending: false }).limit(1).single();
+  if (error || !last) { showToast('לא נמצא גיבוי לשחזור', true); return; }
+  const d = last.data;
+  showToast('משחזר...');
+  try {
+    if (d.profiles?.length) await sb.from('fl_profiles').upsert(d.profiles);
+    if (d.reports?.length) await sb.from('fl_reports').upsert(d.reports);
+    if (d.shifts?.length) await sb.from('fl_shifts').upsert(d.shifts);
+    if (d.rate_settings?.length) await sb.from('fl_rate_settings').upsert(d.rate_settings);
+    showToast('השחזור הושלם ✓');
+  } catch (e) {
+    showToast('שגיאה בשחזור: ' + e.message, true);
+  }
 }
 
 async function loadAdminPending() {
   const { data } = await sb.from('fl_reports')
     .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role), shifts:fl_shifts(*)')
-    .eq('status', 'submitted').order('submitted_at');
-  renderAdminReportList(data || [], 'admin-pending', true);
+    .eq('status', 'submitted').eq('is_deleted', false).order('submitted_at');
+  const filtered = (data || []).map(r => ({ ...r, shifts: (r.shifts || []).filter(s => !s.is_deleted) }));
+  renderAdminReportList(filtered, 'admin-pending', true);
 }
 
 async function loadAdminAll() {
   const { data } = await sb.from('fl_reports')
     .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role), shifts:fl_shifts(*)')
+    .eq('is_deleted', false)
     .order('year', { ascending: false }).order('month', { ascending: false });
-  renderAdminReportList(data || [], 'admin-all', false);
+  const filtered = (data || []).map(r => ({ ...r, shifts: (r.shifts || []).filter(s => !s.is_deleted) }));
+  renderAdminReportList(filtered, 'admin-all', false);
 }
 
 function renderAdminReportList(reports, containerId, showActions) {
@@ -627,10 +695,10 @@ function adminEditShift(reportId, shiftId) {
 }
 
 async function adminDeleteShift(reportId, shiftId) {
-  if (!confirm('למחוק את המשמרת הזו לצמיתות?')) return;
-  const { error } = await sb.from('fl_shifts').delete().eq('id', shiftId);
-  if (error) { showToast('שגיאה במחיקה: ' + error.message, true); return; }
-  showToast('המשמרת נמחקה ✓');
+  if (!confirm('להסתיר את המשמרת הזו? (המידע לא נמחק לצמיתות, ניתן לשחזר מגיבוי במידת הצורך)')) return;
+  const { error } = await sb.from('fl_shifts').update({ is_deleted: true }).eq('id', shiftId);
+  if (error) { showToast('שגיאה: ' + error.message, true); return; }
+  showToast('המשמרת הוסתרה ✓');
   await refreshAfterAdminEdit(reportId);
 }
 
@@ -638,7 +706,7 @@ async function refreshAfterAdminEdit(reportId) {
   if (managerOwnProfile) { currentProfile = managerOwnProfile; }
   adminEditMode = false;
   adminEditReportId = null;
-  const { data: shifts } = await sb.from('fl_shifts').select('*').eq('report_id', reportId).order('day_of_month');
+  const { data: shifts } = await sb.from('fl_shifts').select('*').eq('report_id', reportId).eq('is_deleted', false).order('day_of_month');
   const report = window._adminReportsCache[reportId];
   if (report) report.shifts = shifts || [];
   const box = document.getElementById('admin-details-' + reportId);
