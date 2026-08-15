@@ -329,7 +329,6 @@ function openShiftModal(shiftId) {
     document.getElementById('shift-camera').checked = !!s.extra_equipment;
     document.getElementById('shift-wireless').value = s.extra_equipment || 0;
     document.getElementById('shift-daytype').value = s.day_type;
-    document.getElementById('shift-season').value = s.season;
   } else {
     document.getElementById('shift-location').value = '';
     setTimeValue('shift-start', '09:00');
@@ -338,18 +337,12 @@ function openShiftModal(shiftId) {
     document.getElementById('shift-camera').checked = false;
     document.getElementById('shift-wireless').value = 0;
     document.getElementById('shift-daytype').value = 'regular';
-    document.getElementById('shift-season').value = defaultSeason();
   }
   updateShiftPreview();
   openModalEl('modal-shift');
 }
 
-function defaultSeason() {
-  const m = currentReport.month;
-  return (m >= 4 && m <= 9) ? 'summer' : 'winter'; // אפריל-ספטמבר קיץ (הערכה, ניתן לשנות ידנית)
-}
-
-['shift-day','shift-start-h','shift-start-m','shift-end-h','shift-end-m','shift-km','shift-camera','shift-wireless','shift-daytype','shift-season'].forEach(id => {
+['shift-day','shift-start-h','shift-start-m','shift-end-h','shift-end-m','shift-km','shift-camera','shift-wireless','shift-daytype'].forEach(id => {
   document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', updateShiftPreview);
@@ -370,7 +363,6 @@ function updateShiftPreview() {
     role: currentProfile.role, year: currentReport.year, month: currentReport.month, dayOfMonth: day,
     dayType: document.getElementById('shift-daytype').value, startTime: start, endTime: end,
     km: parseFloat(document.getElementById('shift-km').value) || 0, extraEquipment: extra,
-    season: document.getElementById('shift-season').value
   }, rateSettings);
   preview.textContent = `סכום משוער (לפני מע"מ): ₪${r.beforeVat.toLocaleString()}`;
 }
@@ -393,10 +385,10 @@ async function saveShift() {
     km: parseFloat(document.getElementById('shift-km').value) || 0,
     extra_equipment: extra,
     day_type: document.getElementById('shift-daytype').value,
-    season: document.getElementById('shift-season').value,
+    season: getIsraeliSeason(currentReport.year, currentReport.month, day),
   };
   const r = calcShift({ role: currentProfile.role, year: currentReport.year, month: currentReport.month, dayOfMonth: day,
-    dayType: payload.day_type, startTime: start, endTime: end, km: payload.km, extraEquipment: extra, season: payload.season }, rateSettings);
+    dayType: payload.day_type, startTime: start, endTime: end, km: payload.km, extraEquipment: extra }, rateSettings);
   payload.amount_before_vat = r.beforeVat;
 
   let error;
@@ -500,14 +492,14 @@ function switchAdminTab(tab) {
 
 async function loadAdminPending() {
   const { data } = await sb.from('fl_reports')
-    .select('*, profiles:fl_profiles(full_name, role), shifts:fl_shifts(*)')
+    .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role), shifts:fl_shifts(*)')
     .eq('status', 'submitted').order('submitted_at');
   renderAdminReportList(data || [], 'admin-pending', true);
 }
 
 async function loadAdminAll() {
   const { data } = await sb.from('fl_reports')
-    .select('*, profiles:fl_profiles(full_name, role), shifts:fl_shifts(*)')
+    .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role), shifts:fl_shifts(*)')
     .order('year', { ascending: false }).order('month', { ascending: false });
   renderAdminReportList(data || [], 'admin-all', false);
 }

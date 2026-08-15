@@ -6,7 +6,8 @@ function getDayOfWeek(year, month, day) {
   return new Date(year, month - 1, day).getDay();
 }
 
-function calcShift({ role, year, month, dayOfMonth, dayType, startTime, endTime, km, extraEquipment, season }, rates) {
+function calcShift({ role, year, month, dayOfMonth, dayType, startTime, endTime, km, extraEquipment }, rates) {
+  const season = getIsraeliSeason(year, month, dayOfMonth);
   const dow = getDayOfWeek(year, month, dayOfMonth);
   const isFriday = dow === 5;
   const isSaturday = dow === 6;
@@ -71,3 +72,20 @@ function calcShift({ role, year, month, dayOfMonth, dayType, startTime, endTime,
 }
 
 function round2(n) { return Math.round(n * 100) / 100; }
+
+// קביעת עונה (קיץ/חורף) אוטומטית לפי התאריך, לפי חוק שעון קיץ בישראל:
+// כניסה: יום שישי שלפני יום ראשון האחרון של מרץ | יציאה: יום ראשון האחרון של אוקטובר
+function getLastSunday(year, month) {
+  // month: 1-12. מחזיר את התאריך של יום ראשון האחרון בחודש הזה
+  const d = new Date(year, month, 0); // היום האחרון בחודש
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
+function getIsraeliSeason(year, month, day) {
+  const date = new Date(year, month - 1, day);
+  const lastSunMarch = getLastSunday(year, 3);
+  const dstStart = new Date(lastSunMarch);
+  dstStart.setDate(dstStart.getDate() - 2); // יום שישי שלפני
+  const dstEnd = getLastSunday(year, 10);
+  return (date >= dstStart && date < dstEnd) ? 'summer' : 'winter';
+}
