@@ -27,7 +27,12 @@ function getWeekStartAndDayIndex(year, month, day) {
   const dayIndex = d.getDay(); // 0=Sunday
   const sunday = new Date(d);
   sunday.setDate(d.getDate() - dayIndex);
-  const iso = sunday.toISOString().slice(0, 10);
+  // בניית מחרוזת תאריך ידנית מרכיבי הזמן המקומי - לא toISOString(),
+  // כדי למנוע "גלישה" יום אחורה עקב המרה ל-UTC (בעיה שקורית באזור זמן ישראל)
+  const yyyy = sunday.getFullYear();
+  const mm = String(sunday.getMonth() + 1).padStart(2, '0');
+  const dd = String(sunday.getDate()).padStart(2, '0');
+  const iso = `${yyyy}-${mm}-${dd}`;
   return { weekStart: iso, dayIndex };
 }
 
