@@ -81,6 +81,17 @@ function getTimeValue(prefix) {
 // ============================================================
 // אתחול
 // ============================================================
+// ---- רענון אוטומטי מדי כמה שבועות ----
+// מונע מצב שבו טאב שנשאר פתוח זמן רב מדי ממשיך לרוץ על גרסת קוד ישנה
+// (למשל אחרי שאנחנו מעדכנים תיקונים ב-GitHub), גם אם המשתמש לא סוגר/פותח מחדש בעצמו
+const PAGE_LOAD_TIME = Date.now();
+const AUTO_REFRESH_AFTER_MS = 14 * 24 * 60 * 60 * 1000; // שבועיים
+setInterval(() => {
+  if (Date.now() - PAGE_LOAD_TIME > AUTO_REFRESH_AFTER_MS) {
+    location.reload();
+  }
+}, 60 * 60 * 1000); // בדיקה כל שעה
+
 window.addEventListener('DOMContentLoaded', async () => {
   const { data: { session } } = await sb.auth.getSession();
   if (session) {
