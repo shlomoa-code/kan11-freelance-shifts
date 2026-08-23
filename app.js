@@ -646,7 +646,7 @@ function renderAdminReportList(reports, containerId, showActions) {
           <strong>₪${(total+vat).toLocaleString(undefined,{maximumFractionDigits:0})}</strong>
         </div>
       </div>
-      ${r.approval_note ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;margin-top:10px;font-size:13px;color:#166534;"><strong>הערה:</strong> ${r.approval_note}</div>` : ''}
+      ${r.approval_note ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;margin-top:10px;font-size:13px;color:#166534;"><strong>הערה:</strong> ${r.approval_note} ${isFullManager ? `<button class="icon-btn" style="font-size:12px;" onclick="promptEditApprovalNote('${r.id}','${(r.approval_note||'').replace(/'/g, "\\'")}')" title="ערוך הערה">✏️</button>` : ''}</div>` : (isFullManager ? `<button class="btn btn-sm btn-outline" style="margin-top:10px;width:100%;" onclick="promptEditApprovalNote('${r.id}','')">✏️ הוסף הערה</button>` : '')}
       <div id="admin-details-${r.id}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;"></div>
       <div class="row" style="margin-top:10px;">
         <button class="btn btn-sm btn-outline" style="flex:1;" onclick="printReport('${r.id}')">🖨️ הדפס דוח לחתימה</button>
@@ -726,6 +726,17 @@ async function printReport(reportId) {
   const w = window.open('', '_blank');
   w.document.write(html);
   w.document.close();
+}
+
+async function promptEditApprovalNote(reportId, currentNote) {
+  const note = prompt('הערה (לצלם/מקליט ולהנהלת חשבונות):', currentNote);
+  if (note === null) return;
+  const { data, error } = await sb.from('fl_reports').update({ approval_note: note.trim() || null }).eq('id', reportId).select();
+  if (error) { showToast('שגיאה: ' + error.message, true); return; }
+  if (!data || data.length === 0) { showToast('העדכון נחסם (חסרה הרשאה)', true); return; }
+  showToast('ההערה נשמרה ✓');
+  const activeTab = document.getElementById('tab-pending').classList.contains('active') ? 'pending' : 'all';
+  activeTab === 'pending' ? loadAdminPending() : loadAdminAll();
 }
 
 async function promptEditFreelancerName(workerId, currentName) {
