@@ -631,6 +631,7 @@ function renderAdminReportList(reports, containerId, showActions) {
       <div id="admin-details-${r.id}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;"></div>
       <div class="row" style="margin-top:10px;">
         <button class="btn btn-sm btn-outline" style="flex:1;" onclick="printReport('${r.id}')">🖨️ הדפס דוח לחתימה</button>
+        ${isFullManager ? `<button class="btn btn-sm btn-outline" style="flex:1;color:var(--muted);" onclick="adminHideReport('${r.id}')">🗑️ הסתר דוח</button>` : ''}
       </div>
       ${showActions && isFullManager ? `<div class="row" style="margin-top:10px;">
         <button class="btn btn-sm btn-primary" style="flex:1;" onclick="approveReport('${r.id}')">✓ אישור</button>
@@ -819,6 +820,15 @@ async function refreshAfterAdminEdit(reportId) {
     toggleAdminDetails(reportId); // יסגור כי כרגע פתוח
     toggleAdminDetails(reportId); // ויפתח מחדש עם הנתונים המעודכנים
   }
+  const activeTab = document.getElementById('tab-pending').classList.contains('active') ? 'pending' : 'all';
+  activeTab === 'pending' ? loadAdminPending() : loadAdminAll();
+}
+
+async function adminHideReport(id) {
+  if (!confirm('להסתיר את הדוח הזה מהתצוגה? (לא נמחק לצמיתות - שימושי לניקוי דוחות בדיקה/ניסיון)')) return;
+  const { error } = await sb.from('fl_reports').update({ is_deleted: true }).eq('id', id);
+  if (error) { showToast('שגיאה: ' + error.message, true); return; }
+  showToast('הדוח הוסתר ✓');
   const activeTab = document.getElementById('tab-pending').classList.contains('active') ? 'pending' : 'all';
   activeTab === 'pending' ? loadAdminPending() : loadAdminAll();
 }
