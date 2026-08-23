@@ -12,7 +12,9 @@ function calcShift({ role, year, month, dayOfMonth, dayType, startTime, endTime,
   const isFriday = dow === 5;
   const isSaturday = dow === 6;
 
-  const baseHourly = role === 'photographer' ? rates.photographer_daily / 10 : rates.recorder_daily / 10;
+  const baseHourly = role === 'photographer' ? rates.photographer_daily / 10
+    : role === 'producer' ? rates.producer_daily / 10
+    : rates.recorder_daily / 10;
   const entryHour = season === 'summer' ? rates.entry_hour_summer : rates.entry_hour_winter;
   const exitHour = season === 'summer' ? rates.exit_hour_summer : rates.exit_hour_winter;
 
@@ -62,7 +64,7 @@ function calcShift({ role, year, month, dayOfMonth, dayType, startTime, endTime,
   if (role === 'recorder' && extraEquipment) equipmentBonus = rates.wireless_bonus * Math.min(rates.wireless_max, extraEquipment);
 
   let kmPay = 0;
-  if (role === 'photographer' && km > rates.km_free) kmPay = (km - rates.km_free) * rates.km_rate;
+  if ((role === 'photographer' || role === 'producer') && km > rates.km_free) kmPay = (km - rates.km_free) * rates.km_rate;
 
   const beforeVat = round2(hoursPay + equipmentBonus + kmPay);
   const vat = round2(beforeVat * (rates.vat_percent / 100));

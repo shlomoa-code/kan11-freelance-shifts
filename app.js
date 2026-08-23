@@ -6,7 +6,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_pUoh7aPHbENXIoSP1uLnsQ_dVXizlCz';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-const ROLE_LABELS = { photographer: 'צלם', recorder: 'מקליט', manager: 'מנהל', accountant: 'הנהלת חשבונות' };
+const ROLE_LABELS = { photographer: 'צלם', recorder: 'מקליט', manager: 'מנהל', accountant: 'הנהלת חשבונות', producer: 'מפיק' };
 const STATUS_LABELS = { open: 'פתוח', submitted: 'ממתין לאישור', approved: 'מאושר', rejected: 'נדחה' };
 const STATUS_BADGE = { open: 'badge-open', submitted: 'badge-submitted', approved: 'badge-approved', rejected: 'badge-rejected' };
 
@@ -330,7 +330,7 @@ function openShiftModal(shiftId) {
   document.getElementById('shift-modal-title').textContent = shiftId ? 'עריכת משמרת' : 'משמרת חדשה';
   document.getElementById('shift-modal-sub').textContent = `${MONTH_NAMES[currentReport.month-1]} ${currentReport.year}`;
 
-  document.getElementById('km-field').classList.toggle('hidden', currentProfile.role !== 'photographer');
+  document.getElementById('km-field').classList.toggle('hidden', currentProfile.role !== 'photographer' && currentProfile.role !== 'producer');
   document.getElementById('camera-field').classList.toggle('hidden', currentProfile.role !== 'photographer');
   document.getElementById('wireless-field').classList.toggle('hidden', currentProfile.role !== 'recorder');
 
@@ -365,15 +365,20 @@ function openShiftModal(shiftId) {
   });
 });
 
+
+function getExtraEquipmentValue() {
+  if (currentProfile.role === 'photographer') return document.getElementById('shift-camera').checked ? 1 : 0;
+  if (currentProfile.role === 'recorder') return parseInt(document.getElementById('shift-wireless').value) || 0;
+  return 0; // מפיק - אין תוספת ציוד
+}
+
 function updateShiftPreview() {
   const day = parseInt(document.getElementById('shift-day').value);
   const start = getTimeValue('shift-start');
   const end = getTimeValue('shift-end');
   const preview = document.getElementById('shift-preview');
   if (!day || !start || !end || !currentReport) { preview.textContent = ''; return; }
-  const extra = currentProfile.role === 'photographer'
-    ? (document.getElementById('shift-camera').checked ? 1 : 0)
-    : parseInt(document.getElementById('shift-wireless').value);
+  const extra = getExtraEquipmentValue();
   const r = calcShift({
     role: currentProfile.role, year: currentReport.year, month: currentReport.month, dayOfMonth: day,
     dayType: document.getElementById('shift-daytype').value, startTime: start, endTime: end,
@@ -388,9 +393,7 @@ async function saveShift() {
   const end = getTimeValue('shift-end');
   if (!day || !start || !end) { showToast('נא למלא יום ושעות', true); return; }
 
-  const extra = currentProfile.role === 'photographer'
-    ? (document.getElementById('shift-camera').checked ? 1 : 0)
-    : parseInt(document.getElementById('shift-wireless').value);
+  const extra = getExtraEquipmentValue();
 
   const payload = {
     report_id: currentReport.id,
@@ -835,6 +838,7 @@ async function loadAdminRates() {
   box.innerHTML = `<div class="card">
     ${rateField('תעריף יומי צלם (₪, 10 שעות)','photographer_daily',r.photographer_daily)}
     ${rateField('תעריף יומי מקליט (₪, 10 שעות)','recorder_daily',r.recorder_daily)}
+    ${rateField('תעריף יומי מפיק (₪, 10 שעות)','producer_daily',r.producer_daily)}
     ${rateField('שעות נוספות שלב 1 (%)','tier1_pct',r.tier1_pct)}
     ${rateField('שעות נוספות שלב 2 (%)','tier2_pct',r.tier2_pct)}
     ${rateField('תעריף לילה (%)','night_pct',r.night_pct)}
@@ -859,7 +863,7 @@ function rateField(label, key, value) {
 }
 
 async function saveRates() {
-  const keys = ['photographer_daily','recorder_daily','tier1_pct','tier2_pct','night_pct','chag_shabbat_pct','election_pct',
+  const keys = ['photographer_daily','recorder_daily','producer_daily','tier1_pct','tier2_pct','night_pct','chag_shabbat_pct','election_pct',
     'entry_hour_summer','exit_hour_summer','entry_hour_winter','exit_hour_winter','km_free','km_rate','camera_bonus','wireless_bonus','wireless_max','vat_percent'];
   const payload = {};
   keys.forEach(k => payload[k] = parseFloat(document.getElementById('rate-'+k).value));
