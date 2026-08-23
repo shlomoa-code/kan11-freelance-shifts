@@ -196,18 +196,32 @@ async function logout() {
 // ============================================================
 async function loadDashboard() {
   const { data: reports } = await sb.from('fl_reports')
-    .select('*, shifts:fl_shifts(count)')
+    .select('*, shifts:fl_shifts(amount_before_vat, is_deleted)')
     .eq('worker_id', currentUser.id)
     .eq('is_deleted', false)
     .order('year', { ascending: false }).order('month', { ascending: false });
 
+  (reports || []).forEach(r => { r.shifts = (r.shifts || []).filter(s => !s.is_deleted); });
+
   const open = (reports || []).filter(r => r.status === 'open');
   const history = (reports || []).filter(r => r.status !== 'open');
+  const approved = (reports || []).filter(r => r.status === 'approved');
+
+  const banner = document.getElementById('approved-banner');
+  banner.innerHTML = approved.map(r => {
+    const total = (r.shifts || []).reduce((s,x) => s + Number(x.amount_before_vat || 0), 0);
+    const vat = total * (rateSettings.vat_percent / 100);
+    return `<div class="approved-card">
+      <div class="title">✅ הדוח שלך לחודש ${MONTH_NAMES[r.month-1]} ${r.year} אושר!</div>
+      <div class="amount">₪${(total+vat).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+      <div class="cta">ניתן להגיש חשבונית להנהלת חשבונות בהתאם לסכום זה.</div>
+    </div>`;
+  }).join('');
 
   const openBox = document.getElementById('open-reports');
   openBox.innerHTML = open.length ? '' : '<div class="empty-box">אין דוחות פתוחים. לחץ על "פתח דוח חודשי חדש" כדי להתחיל.</div>';
   open.forEach(r => {
-    const count = r.shifts?.[0]?.count ?? 0;
+    const count = (r.shifts || []).length;
     openBox.innerHTML += `<div class="report-item" onclick="openReport('${r.id}')">
       <span>${MONTH_NAMES[r.month-1]} ${r.year}</span>
       <span style="color:var(--muted);font-size:13px;">${count} משמרות ←</span>
@@ -217,7 +231,7 @@ async function loadDashboard() {
   const histBox = document.getElementById('history-reports');
   histBox.innerHTML = history.length ? '' : '<div class="empty-box">עדיין לא הוגשו דוחות</div>';
   history.forEach(r => {
-    const count = r.shifts?.[0]?.count ?? 0;
+    const count = (r.shifts || []).length;
     histBox.innerHTML += `<div class="report-item" onclick="openReport('${r.id}')">
       <span>${MONTH_NAMES[r.month-1]} ${r.year} <span class="badge ${STATUS_BADGE[r.status]}">${STATUS_LABELS[r.status]}</span></span>
       <span style="color:var(--muted);font-size:13px;">${count} משמרות</span>
@@ -470,7 +484,7 @@ async function submitReport() {
 }
 
 // ---- התראת מייל למנהל (EmailJS) ----
-const EMAILJS_PUBLIC_KEY = 'YOUR_EMAILJS_PUBLIC_KEY';
+const EMAILJS_PUBLIC_KEY = 'AuQvlX9lCdOzqo1F4';
 const EMAILJS_SERVICE_ID = 'service_dnvy6p8'; // אותו שירות כמו ב-tzalamim
 const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID'; // template ייעודי לדוח פרילנס
 const MANAGER_EMAIL = 'shlomoa@kan.org.il';
@@ -594,7 +608,7 @@ async function restoreLastBackup() {
 
 async function loadAdminPending() {
   const { data } = await sb.from('fl_reports')
-    .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role), shifts:fl_shifts(*)')
+    .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role, email), shifts:fl_shifts(*)')
     .eq('status', 'submitted').eq('is_deleted', false).order('submitted_at');
   const filtered = (data || []).map(r => ({ ...r, shifts: (r.shifts || []).filter(s => !s.is_deleted) }));
   renderAdminReportList(filtered, 'admin-pending', true);
@@ -602,7 +616,7 @@ async function loadAdminPending() {
 
 async function loadAdminAll() {
   const { data } = await sb.from('fl_reports')
-    .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role), shifts:fl_shifts(*)')
+    .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role, email), shifts:fl_shifts(*)')
     .eq('is_deleted', false)
     .order('year', { ascending: false }).order('month', { ascending: false });
   const filtered = (data || []).map(r => ({ ...r, shifts: (r.shifts || []).filter(s => !s.is_deleted) }));
@@ -839,6 +853,42 @@ async function approveReport(id) {
   showToast('הדוח אושר ✓');
   loadAdminPending();
 }
+
+// ---- התראת מייל לפרילנס כשהדוח שלו מאושר (EmailJS) ----
+// משתמש בתבנית הקיימת template_gsj7m1c (משותפת עם tzalamim), עם שדות: worker_email, subject, message, name, email
+const EMAILJS_APPROVAL_TEMPLATE_ID = 'template_gsj7m1c';
+
+async function sendApprovalEmail(report) {
+  if (typeof emailjs === 'undefined') return;
+  if (!report.profiles?.email) return;
+  const total = (report.shifts || []).reduce((s,x) => s + Number(x.amount_before_vat || 0), 0);
+  const vat = total * (rateSettings.vat_percent / 100);
+  const monthLabel = `${MONTH_NAMES[report.month-1]} ${report.year}`;
+  const totalStr = (total+vat).toLocaleString(undefined, {maximumFractionDigits:2});
+  const message = `שלום ${report.profiles.full_name},
+
+הדוח שלך עבור ${monthLabel} אושר.
+סכום כולל מע"מ: ₪${totalStr}
+
+ניתן לשלוח חשבונית / דרישת תשלום בהתאם לסכום זה אל:
+אפרת: efratn@kan.org.il
+שלמה: shlomoa@kan.org.il
+
+תודה,
+כאן 11 - חדשות`;
+  try {
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_APPROVAL_TEMPLATE_ID, {
+      worker_email: report.profiles.email,
+      subject: `הדוח שלך עבור ${monthLabel} אושר`,
+      message: message,
+      name: 'כאן 11 - חדשות',
+      email: MANAGER_EMAIL,
+    }, EMAILJS_PUBLIC_KEY);
+  } catch (e) {
+    console.error('שליחת מייל אישור נכשלה', e);
+  }
+}
+
 
 function rejectReportPrompt(id) {
   const note = prompt('הערה לצלם/מקליט (מה צריך לתקן):');
