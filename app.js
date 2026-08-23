@@ -214,6 +214,7 @@ async function loadDashboard() {
     return `<div class="approved-card">
       <div class="title">✅ הדוח שלך לחודש ${MONTH_NAMES[r.month-1]} ${r.year} אושר!</div>
       <div class="amount">₪${(total+vat).toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+      ${r.approval_note ? `<div class="cta" style="font-weight:700;margin-bottom:4px;">הערה: ${r.approval_note}</div>` : ''}
       <div class="cta">ניתן להגיש חשבונית להנהלת חשבונות בהתאם לסכום זה.</div>
     </div>`;
   }).join('');
@@ -338,6 +339,9 @@ function renderReportScreen() {
   statusBox.innerHTML = '';
   if (currentReport.status === 'rejected' && currentReport.manager_note) {
     statusBox.innerHTML = `<div class="card" style="border-color:#fecaca;background:#fef2f2;margin-top:14px;"><strong>הדוח הוחזר לתיקון:</strong><br>${currentReport.manager_note}</div>`;
+  }
+  if (currentReport.status === 'approved' && currentReport.approval_note) {
+    statusBox.innerHTML = `<div class="card" style="border-color:#bbf7d0;background:#f0fdf4;margin-top:14px;"><strong>הערה מהמנהל:</strong><br>${currentReport.approval_note}</div>`;
   }
 }
 
@@ -642,6 +646,7 @@ function renderAdminReportList(reports, containerId, showActions) {
           <strong>₪${(total+vat).toLocaleString(undefined,{maximumFractionDigits:0})}</strong>
         </div>
       </div>
+      ${r.approval_note ? `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;margin-top:10px;font-size:13px;color:#166534;"><strong>הערה:</strong> ${r.approval_note}</div>` : ''}
       <div id="admin-details-${r.id}" class="hidden" style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;"></div>
       <div class="row" style="margin-top:10px;">
         <button class="btn btn-sm btn-outline" style="flex:1;" onclick="printReport('${r.id}')">🖨️ הדפס דוח לחתימה</button>
@@ -700,6 +705,7 @@ async function printReport(reportId) {
       <div><strong>שם:</strong> ${report.profiles.full_name} (${ROLE_LABELS[report.profiles.role]})</div>
       <div><strong>חודש:</strong> ${MONTH_NAMES[report.month-1]} ${report.year}</div>
       <div><strong>סטטוס:</strong> ${STATUS_LABELS[report.status]}</div>
+      ${report.approval_note ? `<div><strong>הערה:</strong> ${report.approval_note}</div>` : ''}
     </div>
     <table>
       <thead><tr><th>תאריך</th><th>שעות</th><th>סה"כ שעות</th><th>סוג יום</th><th>מיקום</th><th>ק"מ</th><th>סכום</th></tr></thead>
@@ -848,10 +854,13 @@ async function adminHideReport(id) {
 }
 
 async function approveReport(id) {
-  const { error } = await sb.from('fl_reports').update({ status: 'approved', decided_at: new Date().toISOString(), decided_by: currentUser.id }).eq('id', id);
+  const note = prompt('הערה לצלם/מקליט ולהנהלת חשבונות (לדוגמה: "צילום לדיגיטל", "צילום לערבית") - אופציונלי:');
+  if (note === null) return; // המשתמש ביטל
+  const { error } = await sb.from('fl_reports').update({ status: 'approved', decided_at: new Date().toISOString(), decided_by: currentUser.id, approval_note: note.trim() || null }).eq('id', id);
   if (error) { showToast('שגיאה', true); return; }
   showToast('הדוח אושר ✓');
-  loadAdminPending();
+  const activeTab = document.getElementById('tab-pending').classList.contains('active') ? 'pending' : 'all';
+  activeTab === 'pending' ? loadAdminPending() : loadAdminAll();
 }
 
 // ---- התראת מייל לפרילנס כשהדוח שלו מאושר (EmailJS) ----
