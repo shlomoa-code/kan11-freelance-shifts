@@ -280,11 +280,17 @@ async function loadShifts() {
   currentShifts = data || [];
 }
 
+function getLastDayOfMonth(year, month) {
+  // מחזיר את היום האחרון בפועל של החודש (28/29/30/31, בהתאמה אוטומטית)
+  // month כאן 1-based; new Date(year, month, 0) = "יום 0" של החודש שאחריו = היום האחרון של month עצמו
+  return new Date(year, month, 0);
+}
+
 function monthHasEnded(year, month) {
-  // מותר להגיש רק החל מהיום הראשון של החודש שאחרי החודש המדווח
+  // מותר להגיש רק החל מהיום האחרון בפועל של החודש המדווח (00:00), מתאים אוטומטית לכל אורך חודש
   const now = new Date();
-  const firstOfNextMonth = new Date(year, month, 1); // month כאן כבר 1-based, אז month=הבא ב-Date (0-based)
-  return now >= firstOfNextMonth;
+  const lastDay = getLastDayOfMonth(year, month);
+  return now >= lastDay;
 }
 
 function renderReportScreen() {
@@ -301,7 +307,7 @@ function renderReportScreen() {
     submitBtn.disabled = !canSubmit;
     submitBtn.style.opacity = canSubmit ? '1' : '0.5';
     submitBtn.style.cursor = canSubmit ? 'pointer' : 'not-allowed';
-    submitBtn.textContent = canSubmit ? '🔒 נעל ושלח דוח' : `🔒 ניתן להגיש רק החל מ-1/${(currentReport.month % 12) + 1}/${currentReport.month === 12 ? currentReport.year + 1 : currentReport.year}`;
+    submitBtn.textContent = canSubmit ? '🔒 נעל ושלח דוח' : `🔒 ניתן להגיש רק החל מ-${getLastDayOfMonth(currentReport.year, currentReport.month).getDate()}/${currentReport.month}/${currentReport.year}`;
   }
 
   const list = document.getElementById('shifts-list');
