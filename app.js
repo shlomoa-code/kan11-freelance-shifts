@@ -37,15 +37,29 @@ function getWeekStartAndDayIndex(year, month, day) {
 }
 
 // בדיקה האם משמרת נתונה קיימת בסידור העבודה של tzalamim עבור אותו עובד/תאריך
+// בודקת גם את הסידור השוטף (shifts) וגם שיבוצי מגזין (magazine_teams)
 async function checkShiftInRoster(fullName, year, month, day) {
   const { weekStart, dayIndex } = getWeekStartAndDayIndex(year, month, day);
-  const { data, error } = await sbTz.from('shifts')
+  const target = normalizeName(fullName);
+
+  const { data: shiftsData, error: shiftsErr } = await sbTz.from('shifts')
     .select('freelance_name, freelance_recorder_name, label, region, start_time, end_time')
     .eq('week_start', weekStart).eq('day_of_week', dayIndex);
-  if (error || !data) return { found: null, reason: 'שגיאה בבדיקה' };
-  const target = normalizeName(fullName);
-  const match = data.find(s => normalizeName(s.freelance_name) === target || normalizeName(s.freelance_recorder_name) === target);
-  return { found: !!match, match };
+  if (!shiftsErr && shiftsData) {
+    const match = shiftsData.find(s => normalizeName(s.freelance_name) === target || normalizeName(s.freelance_recorder_name) === target);
+    if (match) return { found: true, match, source: 'שוטף' };
+  }
+
+  const { data: magData, error: magErr } = await sbTz.from('magazine_teams')
+    .select('freelance_photographer_name, freelance_recorder_name, magazine, reporter_name, topic')
+    .eq('week_start', weekStart).eq('day_of_week', dayIndex);
+  if (!magErr && magData) {
+    const match = magData.find(s => normalizeName(s.freelance_photographer_name) === target || normalizeName(s.freelance_recorder_name) === target);
+    if (match) return { found: true, match, source: 'מגזין' };
+  }
+
+  if (shiftsErr && magErr) return { found: null, reason: 'שגיאה בבדיקה' };
+  return { found: false };
 }
 
 let currentUser = null;   // { id, email }
@@ -774,7 +788,7 @@ function toggleAdminDetails(reportId) {
         if (!el) return;
         if (res.found === null) { el.innerHTML = `<span style="color:var(--muted);">⚠️ לא ניתן לבדוק</span>`; return; }
         el.innerHTML = res.found
-          ? `<span style="color:var(--green);">✓ נמצא בסידור העבודה</span>`
+          ? `<span style="color:var(--green);">✓ נמצא בסידור העבודה${res.source ? ' (' + res.source + ')' : ''}</span>`
           : `<span style="color:var(--red);font-weight:700;">⚠️ לא נמצא בסידור העבודה לתאריך זה</span>`;
       });
     });
