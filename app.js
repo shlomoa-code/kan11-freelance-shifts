@@ -107,6 +107,19 @@ setInterval(() => {
 }, 60 * 60 * 1000); // בדיקה כל שעה
 
 window.addEventListener('DOMContentLoaded', async () => {
+  // זיהוי חזרה מקישור איפוס סיסמה במייל - מציג את מודל קביעת הסיסמה החדשה
+  const isPasswordRecovery = window.location.hash.includes('type=recovery');
+  sb.auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      showScreen('screen-auth');
+      openModalEl('modal-new-password');
+    }
+  });
+  if (isPasswordRecovery) {
+    showScreen('screen-auth');
+    openModalEl('modal-new-password');
+    return; // לא ממשיכים לניתוב רגיל עד שהסיסמה תוגדר
+  }
   const { data: { session } } = await sb.auth.getSession();
   if (session) {
     currentUser = session.user;
@@ -197,6 +210,29 @@ async function doLogin() {
   if (error) { showToast('התחברות נכשלה: ' + error.message, true); return; }
   currentUser = data.user;
   await loadProfileAndRoute();
+}
+
+// ---- שכחתי סיסמה ----
+async function promptForgotPassword() {
+  const email = prompt('הזן את כתובת האימייל שלך - נשלח אליך קישור לאיפוס סיסמה:');
+  if (!email || !email.trim()) return;
+  const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: window.location.origin + window.location.pathname,
+  });
+  if (error) { showToast('שגיאה בשליחת מייל איפוס: ' + error.message, true); return; }
+  showToast('אם הכתובת רשומה במערכת, נשלח אליה מייל עם קישור לאיפוס ✓');
+}
+
+async function submitNewPassword() {
+  const p1 = document.getElementById('new-password-1').value;
+  const p2 = document.getElementById('new-password-2').value;
+  if (!p1 || p1.length < 6) { showToast('הסיסמה חייבת להכיל לפחות 6 תווים', true); return; }
+  if (p1 !== p2) { showToast('הסיסמאות אינן תואמות', true); return; }
+  const { error } = await sb.auth.updateUser({ password: p1 });
+  if (error) { showToast('שגיאה בעדכון הסיסמה: ' + error.message, true); return; }
+  closeModal('modal-new-password');
+  showToast('הסיסמה עודכנה בהצלחה ✓ אפשר להתחבר עכשיו');
+  showLogin();
 }
 
 async function logout() {

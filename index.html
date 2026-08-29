@@ -105,6 +105,9 @@
       <div style="text-align:center;margin-top:14px;">
         <span class="link" onclick="showRegister()">אין לך חשבון? הירשם</span>
       </div>
+      <div style="text-align:center;margin-top:8px;">
+        <span class="link" style="color:var(--muted);" onclick="promptForgotPassword()">שכחתי סיסמה</span>
+      </div>
     </div>
 
     <div id="register-box" class="card hidden">
@@ -288,6 +291,19 @@
       <button class="btn btn-primary" id="confirm-yes-btn">אישור</button>
       <button class="btn btn-outline" onclick="closeModal('modal-confirm')">ביטול</button>
     </div>
+  </div>
+</div>
+
+<!-- ===== מודל: קביעת סיסמה חדשה (אחרי לחיצה על קישור איפוס במייל) ===== -->
+<div class="modal-overlay hidden" id="modal-new-password">
+  <div class="modal">
+    <h3>קביעת סיסמה חדשה</h3>
+    <div class="sub">הזן סיסמה חדשה לחשבון שלך</div>
+    <label>סיסמה חדשה</label>
+    <input type="password" id="new-password-1">
+    <label>אימות סיסמה</label>
+    <input type="password" id="new-password-2">
+    <button class="btn btn-primary" style="margin-top:18px;" onclick="submitNewPassword()">שמור סיסמה</button>
   </div>
 </div>
 
