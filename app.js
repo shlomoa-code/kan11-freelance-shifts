@@ -141,7 +141,7 @@ async function loadProfileAndRoute() {
     isFullManager = currentProfile.role === 'manager';
     showScreen('screen-admin');
     document.getElementById('admin-role-label').textContent = isFullManager ? 'מנהל' : 'הנהלת חשבונות (צפייה בלבד)';
-    ['tab-rates','tab-backup'].forEach(id => {
+    ['tab-rates','tab-backup','tab-hidden'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.classList.toggle('hidden', !isFullManager);
     });
@@ -593,7 +593,7 @@ async function deleteReport() {
 // מסך ניהול (מנהל)
 // ============================================================
 function switchAdminTab(tab) {
-  ['pending','approved','all','rates','backup'].forEach(t => {
+  ['pending','approved','all','rates','backup','hidden'].forEach(t => {
     document.getElementById('tab-'+t).classList.toggle('active', t === tab);
     document.getElementById('admin-'+t).classList.toggle('hidden', t !== tab);
   });
@@ -602,11 +602,43 @@ function switchAdminTab(tab) {
   if (tab === 'all') loadAdminAll();
   if (tab === 'rates') loadAdminRates();
   if (tab === 'backup') loadAdminBackup();
+  if (tab === 'hidden') loadAdminHidden();
 }
 
 // ============================================================
 // גיבוי ושחזור
 // ============================================================
+async function loadAdminHidden() {
+  const box = document.getElementById('admin-hidden');
+  const { data, error } = await sb.from('fl_reports')
+    .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role), shifts:fl_shifts(amount_before_vat, is_deleted)')
+    .eq('is_deleted', true)
+    .order('year', { ascending: false }).order('month', { ascending: false });
+  if (error) { box.innerHTML = '<div class="empty-box">שגיאה בטעינה</div>'; return; }
+  if (!data || !data.length) { box.innerHTML = '<div class="empty-box">אין דוחות מוסתרים</div>'; return; }
+  box.innerHTML = data.map(r => {
+    const total = (r.shifts || []).filter(s => !s.is_deleted).reduce((s,x) => s + Number(x.amount_before_vat || 0), 0);
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;">
+        <div>
+          <strong>${r.profiles.full_name}</strong> <span class="badge" style="background:#eee;color:#555;">${ROLE_LABELS[r.profiles.role]}</span><br>
+          <span style="color:var(--muted);font-size:13px;">${MONTH_NAMES[r.month-1]} ${r.year} · סטטוס מקורי: ${STATUS_LABELS[r.status]}</span>
+        </div>
+        <strong>₪${total.toLocaleString(undefined,{maximumFractionDigits:0})}</strong>
+      </div>
+      <button class="btn btn-sm btn-outline" style="width:100%;margin-top:10px;" onclick="restoreReport('${r.id}')">♻️ שחזר דוח</button>
+    </div>`;
+  }).join('');
+}
+
+async function restoreReport(id) {
+  if (!confirm('לשחזר את הדוח הזה? הוא יחזור להופיע בכל הרשימות הרלוונטיות לפי הסטטוס שלו.')) return;
+  const { error } = await sb.from('fl_reports').update({ is_deleted: false }).eq('id', id);
+  if (error) { showToast('שגיאה: ' + error.message, true); return; }
+  showToast('הדוח שוחזר ✓');
+  loadAdminHidden();
+}
+
 async function loadAdminBackup() {
   const box = document.getElementById('admin-backup');
   const { data: last } = await sb.from('fl_backups').select('created_at').order('created_at', { ascending: false }).limit(1).single();
