@@ -593,11 +593,12 @@ async function deleteReport() {
 // מסך ניהול (מנהל)
 // ============================================================
 function switchAdminTab(tab) {
-  ['pending','all','rates','backup'].forEach(t => {
+  ['pending','approved','all','rates','backup'].forEach(t => {
     document.getElementById('tab-'+t).classList.toggle('active', t === tab);
     document.getElementById('admin-'+t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'pending') loadAdminPending();
+  if (tab === 'approved') loadAdminApproved();
   if (tab === 'all') loadAdminAll();
   if (tab === 'rates') loadAdminRates();
   if (tab === 'backup') loadAdminBackup();
@@ -672,6 +673,15 @@ async function loadAdminPending() {
     .eq('status', 'submitted').eq('is_deleted', false).order('submitted_at');
   const filtered = (data || []).map(r => ({ ...r, shifts: (r.shifts || []).filter(s => !s.is_deleted) }));
   renderAdminReportList(filtered, 'admin-pending', true);
+}
+
+async function loadAdminApproved() {
+  const { data } = await sb.from('fl_reports')
+    .select('*, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name, role, email), shifts:fl_shifts(*)')
+    .eq('status', 'approved').eq('is_deleted', false)
+    .order('decided_at', { ascending: false });
+  const filtered = (data || []).map(r => ({ ...r, shifts: (r.shifts || []).filter(s => !s.is_deleted) }));
+  renderAdminReportList(filtered, 'admin-approved', false);
 }
 
 async function loadAdminAll() {
