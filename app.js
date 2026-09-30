@@ -344,20 +344,23 @@ function monthHasEnded(year, month) {
 }
 
 function renderReportScreen() {
-  const isOpen = currentReport.status === 'open';
+  // דוח שנדחה (rejected) ניתן לעריכה ולשליחה מחדש בדיוק כמו דוח פתוח (open)
+  const canEdit = currentReport.status === 'open' || currentReport.status === 'rejected';
   const canSubmit = monthHasEnded(currentReport.year, currentReport.month);
   document.getElementById('report-title').textContent = `${MONTH_NAMES[currentReport.month-1]} ${currentReport.year}`;
   document.getElementById('report-count').textContent = `${currentShifts.length} משמרות`;
   document.getElementById('report-badge').innerHTML = `<span class="badge ${STATUS_BADGE[currentReport.status]}">${STATUS_LABELS[currentReport.status]}</span>`;
 
-  document.getElementById('add-shift-btn').classList.toggle('hidden', !isOpen);
+  document.getElementById('add-shift-btn').classList.toggle('hidden', !canEdit);
   const submitBtn = document.getElementById('submit-report-btn');
-  submitBtn.classList.toggle('hidden', !isOpen || currentShifts.length === 0);
-  if (isOpen && currentShifts.length > 0) {
+  submitBtn.classList.toggle('hidden', !canEdit || currentShifts.length === 0);
+  if (canEdit && currentShifts.length > 0) {
     submitBtn.disabled = !canSubmit;
     submitBtn.style.opacity = canSubmit ? '1' : '0.5';
     submitBtn.style.cursor = canSubmit ? 'pointer' : 'not-allowed';
-    submitBtn.textContent = canSubmit ? '🔒 נעל ושלח דוח' : `🔒 ניתן להגיש רק החל מ-${getLastDayOfMonth(currentReport.year, currentReport.month).getDate()}/${currentReport.month}/${currentReport.year}`;
+    submitBtn.textContent = canSubmit
+      ? (currentReport.status === 'rejected' ? '🔒 תקן ושלח דוח מחדש' : '🔒 נעל ושלח דוח')
+      : `🔒 ניתן להגיש רק החל מ-${getLastDayOfMonth(currentReport.year, currentReport.month).getDate()}/${currentReport.month}/${currentReport.year}`;
   }
 
   const list = document.getElementById('shifts-list');
@@ -375,7 +378,7 @@ function renderReportScreen() {
     const dowLabel = r.isSaturday ? 'שבת' : r.isFriday ? 'שישי' : '';
     list.innerHTML += `<div class="shift-item">
       <div class="shift-actions">
-        ${isOpen ? `<button class="icon-btn" onclick="deleteShift('${s.id}')">🗑️</button>
+        ${canEdit ? `<button class="icon-btn" onclick="deleteShift('${s.id}')">🗑️</button>
         <button class="icon-btn" onclick="openShiftModal('${s.id}')">✏️</button>` : ''}
       </div>
       <div style="text-align:left;">
