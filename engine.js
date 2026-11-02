@@ -1,5 +1,5 @@
 // מנוע חישוב שכר לצלמים/מקליטים פרילנס - כאן 11
-// rate = base_hourly * MAX(overtime_tier_pct, time_of_day_pct)  (לא מצטבר, רק המקסימום)
+// rate = base_hourly * MIN(100% + תוספת שעות נוספות + תוספת לילה/שבת/חג, תקרה 150%)  (תוספות מצטברות, עם תקרה)
 
 function getDayOfWeek(year, month, day) {
   // 0=ראשון ... 6=שבת
@@ -53,7 +53,11 @@ function calcShift({ role, year, month, dayOfMonth, dayType, startTime, endTime,
       }
     }
 
-    const finalPct = Math.max(tierPct, todPct);
+    // תוספות מצטברות (שעות נוספות + לילה/שבת/חג), עם תקרה של 150% (225 ₪ לצלם).
+    // ביום בחירות התקרה היא תעריף הבחירות (200%).
+    const inElectionHours = dayType === 'election' && clockHour >= 7 && clockHour < 22;
+    const maxPct = inElectionHours ? rates.election_pct : (rates.max_pct || 150);
+    const finalPct = Math.min(100 + (tierPct - 100) + (todPct - 100), maxPct);
     const hourPay = baseHourly * (finalPct / 100) * fraction;
     hoursPay += hourPay;
     breakdown.push({ shiftHourIndex, clockHour, tierPct, todPct, finalPct, fraction, hourPay: round2(hourPay) });
