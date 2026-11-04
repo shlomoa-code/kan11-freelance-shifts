@@ -18,7 +18,15 @@ const TZALAMIM_KEY = 'sb_publishable_NS10PJJwfAKNNezDXMLkVw_xOETnrA7';
 const sbTz = supabase.createClient(TZALAMIM_URL, TZALAMIM_KEY);
 
 function normalizeName(n) {
-  return (n || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  // השוואת שמות ללא תלות בסדר: "מוחמד שנאוי" = "שנאוי מוחמד".
+  // מתעלם גם ממרכאות, מקפים ומרווחים כפולים.
+  return (n || '')
+    .toLowerCase()
+    .replace(/[׳״"'`\-–.,]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(' ');
 }
 
 // יום ראשון (week_start) + אינדקס יום (0=ראשון...6=שבת) לתאריך נתון
