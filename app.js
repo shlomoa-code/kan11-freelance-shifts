@@ -149,7 +149,7 @@ async function loadProfileAndRoute() {
     isFullManager = currentProfile.role === 'manager';
     showScreen('screen-admin');
     document.getElementById('admin-role-label').textContent = isFullManager ? 'מנהל' : 'הנהלת חשבונות (צפייה בלבד)';
-    ['tab-rates','tab-backup','tab-hidden'].forEach(id => {
+    ['tab-rates','tab-backup','tab-hidden','tab-missing'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.classList.toggle('hidden', !isFullManager);
     });
@@ -604,16 +604,159 @@ async function deleteReport() {
 // מסך ניהול (מנהל)
 // ============================================================
 function switchAdminTab(tab) {
-  ['pending','approved','all','rates','backup','hidden'].forEach(t => {
+  ['pending','approved','all','missing','rates','backup','hidden'].forEach(t => {
     document.getElementById('tab-'+t).classList.toggle('active', t === tab);
     document.getElementById('admin-'+t).classList.toggle('hidden', t !== tab);
   });
   if (tab === 'pending') loadAdminPending();
   if (tab === 'approved') loadAdminApproved();
   if (tab === 'all') loadAdminAll();
+  if (tab === 'missing') initAdminMissing();
   if (tab === 'rates') loadAdminRates();
   if (tab === 'backup') loadAdminBackup();
   if (tab === 'hidden') loadAdminHidden();
+}
+
+// ============================================================
+// טאב "חסרי דוח": השוואת סידור העבודה (tzalamim) לדוחות שהוגשו - קריאה בלבד
+// ============================================================
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+let missingListText = '';
+
+function initAdminMissing() {
+  const box = document.getElementById('admin-missing');
+  // ברירת מחדל: החודש הקודם (בדיקה ב-10 לחודש על החודש שהסתיים)
+  const now = new Date();
+  let y = now.getFullYear(), m = now.getMonth(); // m: 0-based של החודש הנוכחי => 1-based של הקודם
+  if (m === 0) { m = 12; y -= 1; }
+  const monthOpts = MONTH_NAMES.map((n, i) => `<option value="${i+1}" ${i+1 === m ? 'selected' : ''}>${n}</option>`).join('');
+  const yearOpts = [y - 1, y, y + 1].map(v => `<option value="${v}" ${v === y ? 'selected' : ''}>${v}</option>`).join('');
+  box.innerHTML = `
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:8px;">מי היה בסידור ולא הגיש דוח?</div>
+      <div class="row" style="gap:8px;">
+        <select id="missing-month" style="flex:1;">${monthOpts}</select>
+        <select id="missing-year" style="flex:1;">${yearOpts}</select>
+        <button class="btn btn-sm btn-primary" onclick="loadAdminMissing()">הצג</button>
+      </div>
+      <div style="color:var(--muted);font-size:12px;margin-top:8px;">הרשימה מבוססת על שיבוצים בסידור העבודה, ולכן היא תזכורת לבירור ולא קביעה שהפרילנסר עבד.</div>
+    </div>
+    <div id="missing-result"></div>`;
+  loadAdminMissing();
+}
+
+// כל תאריכי ה-week_start (ימי ראשון) שמכסים את החודש
+function getWeekStartsForMonth(year, month) {
+  const lastDay = new Date(year, month, 0).getDate();
+  const weeks = [];
+  const first = new Date(year, month - 1, 1);
+  const cur = new Date(year, month - 1, 1 - first.getDay());
+  while (cur.getFullYear() < year || (cur.getFullYear() === year && cur.getMonth() + 1 <= month)) {
+    if (cur > new Date(year, month - 1, lastDay)) break;
+    weeks.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`);
+    cur.setDate(cur.getDate() + 7);
+  }
+  return weeks;
+}
+
+// קריאה עם דפדוף (ברירת המחדל של Supabase היא עד 1000 שורות)
+async function fetchAllRows(buildQuery) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await buildQuery().range(from, from + 999);
+    if (error) throw error;
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
+async function loadAdminMissing() {
+  const res = document.getElementById('missing-result');
+  const month = parseInt(document.getElementById('missing-month').value);
+  const year = parseInt(document.getElementById('missing-year').value);
+  res.innerHTML = '<div class="empty-box">בודק מול הסידור...</div>';
+  try {
+    const weeks = getWeekStartsForMonth(year, month);
+
+    // 1. שמות פרילנסרים מהסידור (שוטף + מגזין), מסוננים לימים שבתוך החודש
+    const [shiftRows, magRows] = await Promise.all([
+      fetchAllRows(() => sbTz.from('shifts')
+        .select('week_start, day_of_week, freelance_name, freelance_recorder_name')
+        .in('week_start', weeks)
+        .or('freelance_name.not.is.null,freelance_recorder_name.not.is.null')),
+      fetchAllRows(() => sbTz.from('magazine_teams')
+        .select('week_start, day_of_week, freelance_photographer_name, freelance_recorder_name')
+        .in('week_start', weeks)
+        .or('freelance_photographer_name.not.is.null,freelance_recorder_name.not.is.null'))
+    ]);
+
+    const roster = new Map(); // שם מנורמל -> { name, days:Set }
+    function addName(rawName, weekStart, dayIdx) {
+      const name = (rawName || '').trim();
+      if (!name) return;
+      const [wy, wm, wd] = weekStart.split('-').map(Number);
+      const d = new Date(wy, wm - 1, wd + dayIdx);
+      if (d.getFullYear() !== year || d.getMonth() + 1 !== month) return;
+      const key = normalizeName(name);
+      if (!key) return;
+      if (!roster.has(key)) roster.set(key, { name, days: new Set() });
+      roster.get(key).days.add(d.getDate());
+    }
+    shiftRows.forEach(r => { addName(r.freelance_name, r.week_start, r.day_of_week); addName(r.freelance_recorder_name, r.week_start, r.day_of_week); });
+    magRows.forEach(r => { addName(r.freelance_photographer_name, r.week_start, r.day_of_week); addName(r.freelance_recorder_name, r.week_start, r.day_of_week); });
+
+    // 2. דוחות החודש (לא מוסתרים)
+    const reports = await fetchAllRows(() => sb.from('fl_reports')
+      .select('id, status, profiles:fl_profiles!fl_reports_worker_id_fkey(full_name), shifts:fl_shifts(is_deleted)')
+      .eq('year', year).eq('month', month).eq('is_deleted', false));
+    const reportByName = new Map();
+    reports.forEach(r => {
+      const key = normalizeName(r.profiles && r.profiles.full_name);
+      if (key) reportByName.set(key, { status: r.status, shiftCount: (r.shifts || []).filter(s => !s.is_deleted).length });
+    });
+
+    // 3. חלוקה לשלוש קבוצות
+    const noReport = [], notSubmitted = [], done = [];
+    [...roster.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, 'he')).forEach(([key, p]) => {
+      const rep = reportByName.get(key);
+      const item = { name: p.name, days: p.days.size, rep };
+      if (!rep) noReport.push(item);
+      else if (rep.status === 'open' || rep.status === 'rejected') notSubmitted.push(item);
+      else done.push(item);
+    });
+
+    const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
+    missingListText = `פרילנסרים שלא הגישו דוח ל${monthLabel}:\n` +
+      [...noReport.map(i => `- ${i.name} (לא נפתח דוח)`), ...notSubmitted.map(i => `- ${i.name} (${i.rep.status === 'rejected' ? 'הוחזר לתיקון' : 'דוח פתוח, לא הוגש'})`)].join('\n');
+
+    const section = (title, color, items, note) => `
+      <div class="card" style="margin-top:12px;">
+        <div style="font-weight:700;color:${color};">${title} (${items.length})</div>
+        ${items.length ? items.map(i => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-size:14px;">
+            <span>${escHtml(i.name)}</span>
+            <span style="color:var(--muted);font-size:12px;">${i.days === 1 ? 'יום אחד' : i.days + ' ימים'} בסידור${note ? note(i) : ''}</span>
+          </div>`).join('') : '<div style="color:var(--muted);font-size:13px;margin-top:6px;">אין</div>'}
+      </div>`;
+
+    res.innerHTML =
+      section('לא פתחו דוח בכלל', '#b91c1c', noReport) +
+      section('פתחו דוח אבל לא הגישו', '#b45309', notSubmitted, i => ` · ${i.rep.status === 'rejected' ? 'הוחזר לתיקון' : i.rep.shiftCount + ' משמרות'}`) +
+      section('הגישו', '#166534', done, i => ` · ${STATUS_LABELS[i.rep.status] || i.rep.status}`) +
+      ((noReport.length || notSubmitted.length) ? `<button class="btn btn-sm btn-outline" style="width:100%;margin-top:12px;" onclick="copyMissingList()">📋 העתק רשימת חסרים</button>` : '') +
+      (roster.size === 0 ? '<div class="empty-box">לא נמצאו שיבוצי פרילנס בסידור לחודש הזה</div>' : '');
+  } catch (e) {
+    res.innerHTML = `<div class="empty-box">שגיאה בבדיקה: ${escHtml(e.message || e)}</div>`;
+  }
+}
+
+function copyMissingList() {
+  navigator.clipboard.writeText(missingListText)
+    .then(() => showToast('הרשימה הועתקה ✓'))
+    .catch(() => showToast('ההעתקה נכשלה', true));
 }
 
 // ============================================================
